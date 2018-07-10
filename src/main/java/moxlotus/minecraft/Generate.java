@@ -1,16 +1,15 @@
 package moxlotus.minecraft;
 
+import moxlotus.minecraft.generate.Configuration;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.InvalidBlockStateException;
 import net.minecraft.command.NumberInvalidException;
 import net.minecraft.init.Blocks;
-import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.event.world.BlockEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
-import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 
 import java.util.*;
@@ -20,37 +19,23 @@ import java.util.*;
 public final class Generate{
     public static final String MODID = "generate";
     public static final String NAME = "Generate";
-    public static final String VERSION = "1.0";
+    public static final String VERSION = "1.1";
 
     private static final List<ConfigEntry> list = new LinkedList<>();
-    private static Configuration config;
-
-    @Mod.EventHandler
-    @SuppressWarnings("unused")
-    public void preInit(FMLPreInitializationEvent event){
-        config = new Configuration(event.getSuggestedConfigurationFile());
-    }
 
     @Mod.EventHandler
     @SuppressWarnings("unused")
     public void postInit(FMLPostInitializationEvent event){
-        //Defaults
-        String[] cobblestone = new String[]{"16 minecraft:cobblestone", " 4 minecraft:stone variant=andesite", " 2 minecraft:stone variant=diorite", " 1 minecraft:stone variant=granite"};
-        String[] stone = new String[]{"16384 minecraft:stone", " 1024 minecraft:coal_ore", "  256 minecraft:iron_ore", "   64 minecraft:redstone_ore", "   32 minecraft:lapis_ore", "   8  minecraft:gold_ore", "    1 minecraft:diamond_ore"};
-        String[] obsidian = new String[]{"1 minecraft:obsidian"};
-
-        config.load();
-        list.add(new ConfigEntry(Blocks.COBBLESTONE, cobblestone));
-        list.add(new ConfigEntry(Blocks.STONE, stone));
-        list.add(new ConfigEntry(Blocks.OBSIDIAN, obsidian));
-        config.save();
+        list.add(new ConfigEntry(Blocks.COBBLESTONE, Configuration.cobblestone));
+        list.add(new ConfigEntry(Blocks.STONE, Configuration.stone));
+        list.add(new ConfigEntry(Blocks.OBSIDIAN, Configuration.obsidian));
     }
 
     @SubscribeEvent
     @SuppressWarnings("unused")
     public static void onFluidPlaceBlockEvent(BlockEvent.FluidPlaceBlockEvent event){
         for (ConfigEntry entry : list)
-            if(event.getNewState().getBlock() == entry.toReplace){
+            if (event.getNewState().getBlock() == entry.toReplace){
                 event.setNewState(entry.getNewBlock());
                 return;
             }
@@ -61,9 +46,8 @@ public final class Generate{
         final int totalWeight;
         final Collection<Pair> pairs;
 
-        ConfigEntry(Block toReplace, String... defaults){
+        ConfigEntry(Block toReplace, String... strings){
             this.toReplace = toReplace;
-            String[] strings = config.get("Replacements", toReplace.toString(), defaults).getStringList();
             //Pairs will be sorted from greatest weight to least
             pairs = new PriorityQueue<>(Collections.reverseOrder(Comparator.comparingInt(Pair::getWeight)));
             int totalWeight = 0;
@@ -82,6 +66,8 @@ public final class Generate{
                     }catch (NumberInvalidException | InvalidBlockStateException ignore){}
                 }
                 if (state == null) state = block.getDefaultState();           //Or use default state
+
+                int biome = -1;//TODO
 
                 pairs.add(new Pair(state, weight));
                 totalWeight += weight;                                        //Calculate total weight
