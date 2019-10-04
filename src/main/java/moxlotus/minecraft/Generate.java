@@ -1,34 +1,36 @@
 package moxlotus.minecraft;
 
 import moxlotus.minecraft.generate.Configuration;
+import moxlotus.minecraft.generate.Node;
 import net.minecraft.block.Block;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.command.CommandBase;
-import net.minecraft.command.InvalidBlockStateException;
-import net.minecraft.command.NumberInvalidException;
-import net.minecraft.init.Blocks;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
+import net.minecraft.state.IProperty;
+import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.event.world.BlockEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.*;
 
-@Mod(modid = Generate.MODID, name = Generate.NAME, version = Generate.VERSION)
+@Mod(Generate.MODID)
 @Mod.EventBusSubscriber
 public final class Generate{
     public static final String MODID = "generate";
     public static final String NAME = "Generate";
-    public static final String VERSION = "1.1";
+    public static final String VERSION = "2.0-1.14";
 
-    private static final List<ConfigEntry> list = new LinkedList<>();
+    private static List<ConfigEntry> list = new LinkedList<>();
 
-    @Mod.EventHandler
-    @SuppressWarnings("unused")
-    public void postInit(FMLPostInitializationEvent event){
+    public static void setup(){
         list.add(new ConfigEntry(Blocks.COBBLESTONE, Configuration.cobblestone));
         list.add(new ConfigEntry(Blocks.STONE, Configuration.stone));
         list.add(new ConfigEntry(Blocks.OBSIDIAN, Configuration.obsidian));
+    }
+
+    public static void teardown(){
+        list = new LinkedList<>();
     }
 
     @SubscribeEvent
@@ -41,15 +43,15 @@ public final class Generate{
             }
     }
 
-    private class ConfigEntry{
+    private static class ConfigEntry{
         final Block toReplace;
         final int totalWeight;
-        final Collection<Pair> pairs;
+        final Node<BlockState> tree;
 
         ConfigEntry(Block toReplace, String... strings){
             this.toReplace = toReplace;
             //Pairs will be sorted from greatest weight to least
-            pairs = new PriorityQueue<>(Collections.reverseOrder(Comparator.comparingInt(Pair::getWeight)));
+            Collection<Pair> pairs = new PriorityQueue<>(Collections.reverseOrder(Comparator.comparingInt(Pair::getWeight)));
             int totalWeight = 0;
             for (String string : strings){                         //Read strings
                 String s = string.trim();
@@ -57,14 +59,10 @@ public final class Generate{
                 if (split.length < 2) continue;
 
                 int weight = Integer.parseInt(split[0]);                      //Read weight
-                Block block = Block.getBlockFromName(split[1]);               //Read Block
+                Block block = ForgeRegistries.BLOCKS.getValue(new ResourceLocation(split[1]));//Read Block
                 if (block == null) continue;
-                IBlockState state = null;
-                if (split.length >= 3){
-                    try{
-                        state = CommandBase.convertArgToBlockState(block, split[2]); //Read state
-                    }catch (NumberInvalidException | InvalidBlockStateException ignore){}
-                }
+                BlockState state = null;
+                if (split.length >= 3) state = convertArgToBlockState(block, split[2]); //Read state
                 if (state == null) state = block.getDefaultState();           //Or use default state
 
                 int biome = -1;//TODO
@@ -73,22 +71,33 @@ public final class Generate{
                 totalWeight += weight;                                        //Calculate total weight
             }
             this.totalWeight = totalWeight;
+            Iterator<Pair> iter = pairs.iterator();
+            Pair pair = iter.next();
+            Node<BlockState> root = Node.makeRoot(pair.weight, pair.state);
+            while(iter.hasNext()){
+                pair = iter.next();
+                root.addChild(pair.weight, pair.state);
+            }
+            tree = root;
         }
 
-        private IBlockState getNewBlock(){
-            int i = new Random().nextInt(totalWeight) + 1; //Pick a number between 1 and the total weight
-            int currentWeight = 0;
-            for (Pair p : pairs){    //Iterate through pairs
-                currentWeight += p.getWeight();             //Calculate current weight
-                if (currentWeight >= i) return p.getState(); //Until we reach the selected weight from before
-            }
-            throw new Error("This should never happen.");  //We should never pick a number bigger than the total weight
+        private static <T extends Comparable<T>> BlockState convertArgToBlockState(Block block, String s){
+            String[] split = s.split("=");
+            IProperty<T> property = (IProperty<T>) block.getStateContainer().getProperty(split[0]);
+            if (property == null) return null;
+            Optional<T> value = property.parseValue(split[1]);
+            if (!value.isPresent()) return null;
+            return block.getDefaultState().with(property, value.get());
+        }
+
+        private BlockState getNewBlock(){
+            return tree.select(new Random().nextInt(tree.getSize() + 1));
         }
 
         private class Pair{
-            private final IBlockState state;
+            private final BlockState state;
             private final int weight;
-            Pair(IBlockState state, int weight){
+            Pair(BlockState state, int weight){
                 this.state = state;
                 this.weight = weight;
             }
@@ -97,7 +106,7 @@ public final class Generate{
                 return weight;
             }
 
-            public IBlockState getState(){
+            public BlockState getState(){
                 return state;
             }
         }

@@ -1,0 +1,6 @@
+{
+    "pack": {
+        "description": "Replaces the output of a cobblestone generator according to config files.",
+        "pack_format": 4
+    }
+}
