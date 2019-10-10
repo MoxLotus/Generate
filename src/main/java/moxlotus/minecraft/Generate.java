@@ -6,7 +6,10 @@ import net.minecraft.block.state.IBlockState;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.InvalidBlockStateException;
 import net.minecraft.command.NumberInvalidException;
+import net.minecraft.init.Biomes;
 import net.minecraft.init.Blocks;
+import net.minecraft.util.ResourceLocation;
+import net.minecraft.world.biome.Biome;
 import net.minecraftforge.event.world.BlockEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
@@ -19,7 +22,7 @@ import java.util.*;
 public final class Generate{
     public static final String MODID = "generate";
     public static final String NAME = "Generate";
-    public static final String VERSION = "1.1";
+    public static final String VERSION = "1.2";
 
     private static final List<ConfigEntry> list = new LinkedList<>();
 
@@ -36,7 +39,9 @@ public final class Generate{
     public static void onFluidPlaceBlockEvent(BlockEvent.FluidPlaceBlockEvent event){
         for (ConfigEntry entry : list)
             if (event.getNewState().getBlock() == entry.toReplace){
-                event.setNewState(entry.getNewBlock());
+                Biome biome = event.getWorld().getBiome(event.getPos());
+                IBlockState state = entry.getNewBlock(biome);
+                if (state != null) event.setNewState(state);
                 return;
             }
     }
@@ -67,30 +72,58 @@ public final class Generate{
                 }
                 if (state == null) state = block.getDefaultState();           //Or use default state
 
-                int biome = -1;//TODO
+                boolean exclusive_exclude = false;
+                List<Biome> list = new LinkedList<>();
 
-                pairs.add(new Pair(state, weight));
+                if (split.length >= 4){
+                    exclusive_exclude = !split[3].equals("-");
+                    for (int i = 4; i < split.length; i++){
+                        Biome b = Biome.REGISTRY.getObject(new ResourceLocation(split[i]));
+                        if (b != null) list.add(b);
+                    }
+                }
+                if (list.isEmpty()) exclusive_exclude = false;
+
+                pairs.add(new Pair(state, weight, exclusive_exclude, list));
                 totalWeight += weight;                                        //Calculate total weight
             }
             this.totalWeight = totalWeight;
         }
 
-        private IBlockState getNewBlock(){
-            int i = new Random().nextInt(totalWeight) + 1; //Pick a number between 1 and the total weight
-            int currentWeight = 0;
-            for (Pair p : pairs){    //Iterate through pairs
-                currentWeight += p.getWeight();             //Calculate current weight
-                if (currentWeight >= i) return p.getState(); //Until we reach the selected weight from before
-            }
-            throw new Error("This should never happen.");  //We should never pick a number bigger than the total weight
+        private boolean hasOptionForBiome(Biome biome){
+            for (Pair pair : pairs)
+                if (pair.isBiomeValid(biome)) return true;
+            return false;
+        }
+
+        private IBlockState getNewBlock(Biome biome){
+            if (!hasOptionForBiome(biome)) return null;
+            Pair pair;
+            loop: do {
+                int i = new Random().nextInt(totalWeight) + 1; //Pick a number between 1 and the total weight
+                int currentWeight = 0;
+                for (Pair p : pairs) {    //Iterate through pairs
+                    currentWeight += p.getWeight();             //Calculate current weight
+                    if (currentWeight >= i){
+                        pair =  p; //Until we reach the selected weight from before
+                        continue loop;
+                    }
+                }
+                throw new Error("This should never happen.");  //We should never pick a number bigger than the total weight
+            }while(!pair.isBiomeValid(biome));
+            return pair.getState();
         }
 
         private class Pair{
             private final IBlockState state;
             private final int weight;
-            Pair(IBlockState state, int weight){
+            private final boolean exclusive;
+            private final List<Biome> biomes;
+            Pair(IBlockState state, int weight, boolean exclusive, List<Biome> biomes){
                 this.state = state;
                 this.weight = weight;
+                this.exclusive = exclusive;
+                this.biomes = biomes;
             }
 
             public int getWeight(){
@@ -99,6 +132,11 @@ public final class Generate{
 
             public IBlockState getState(){
                 return state;
+            }
+
+            public boolean isBiomeValid(Biome biome){
+                if (biomes.isEmpty()) return true;
+                return exclusive == biomes.contains(biome);
             }
         }
     }
